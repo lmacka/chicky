@@ -1,19 +1,18 @@
 #!/bin/bash
 
-USER=ubuntu
 BRANCH=devel
 
 start() {
     # Navigate to the project directory
-    cd /home/$USER/chicky || { echo "Directory not found"; exit 1; }
+    cd "$HOME/chicky" || { echo "Directory not found"; exit 1; }
 
     # Start the Node.js application
-    /usr/bin/node /home/$USER/chicky/server.js
+    /usr/bin/node "$HOME/chicky/server.js"
 }
 
 update() {
     # Navigate to the project directory
-    cd /home/$USER/chicky || { echo "Directory not found"; exit 1; }
+    cd "$HOME/chicky" || { echo "Directory not found"; exit 1; }
 
     # Fetch the latest changes
     git fetch origin $BRANCH
@@ -60,7 +59,7 @@ then
 fi
 
 # Check if the project directory exists
-if [ ! -d "/home/$USER/chicky" ]
+if [ ! -d "$HOME/chicky" ]
 then
     echo "Project directory not found. Please clone the repository and try again."
     exit 1

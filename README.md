@@ -31,8 +31,7 @@ Ensure you have the following installed on your Raspberry Pi Zero:
 
 3. **Configure the Application**
 
-    Edit `config.js` appropriately. For example, you might need to set the remote host for the SSH tunnel.
-    Edit `start.sh` and set the user you'll run as.
+    Edit `config.js` appropriately. For example, you might need to set the remote host for the SSH tunnel and change the run-as user.
 
 4. **Run the Application**
 
@@ -47,10 +46,10 @@ To run the application as a service using `systemd`, follow these steps:
 1. **Create a Systemd Service File**
 
     ```bash
-    sudo nano /etc/systemd/system/chicky.service
+    sudo systemctl edit --force --full chicky.service
     ```
 
-    Add the following content to the file:
+    Add the following content to the file, updating the `User` and paths as needed:
 
     ```ini
     [Unit]
