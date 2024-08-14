@@ -14,6 +14,9 @@ update() {
     # Navigate to the project directory
     cd "$HOME/chicky" || { echo "Directory not found"; exit 1; }
 
+    # Mark config.js as assume unchanged
+    git update-index --assume-unchanged config.js
+
     # Fetch the latest changes
     git fetch origin $BRANCH
 
@@ -35,6 +38,9 @@ update() {
     else
         echo "No upstream changes."
     fi
+
+    # Reset config.js to normal
+    git update-index --no-assume-unchanged config.js
 }
 
 # Check if node is installed
