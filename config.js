@@ -7,6 +7,6 @@ module.exports = {
     sshUsername: 'ubuntu',
     privateKeyPath: path.resolve(process.env.HOME, '.ssh/id_ed25519'), // ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519
     debug: false, // Set this to false to disable debug output
-    servo1: 18,
-    servo2: 14
+    servo1: 14, // GPIO pin for servo 1
+    servo2: 15 // GPIO pin for servo 2
 };
