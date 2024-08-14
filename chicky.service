@@ -1,0 +1,15 @@
+[Unit]
+Description=chicky - A small Raspberry Pi application to securely control servos, lights and stream RTSP feeds. Designed to live in a chicken brooder.
+Documentation=https://github.com/lmacka/chicky
+After=network.target
+
+[Service]
+Environment=NODE_PORT=3000
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/chicky
+ExecStart=/home/ubuntu/chicky/start.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
