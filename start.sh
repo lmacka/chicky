@@ -3,17 +3,6 @@
 USER=ubuntu
 BRANCH=devel
 
-update() {
-    # Navigate to the project directory
-    cd /home/$USER/chicky || { echo "Directory not found"; exit 1; }
-
-    # Pull the latest code from the repository
-    git pull origin $BRANCH
-
-    # Check for dependencies and install if required
-    /usr/bin/npm install
-}
-
 start() {
     # Navigate to the project directory
     cd /home/$USER/chicky || { echo "Directory not found"; exit 1; }
@@ -22,6 +11,32 @@ start() {
     /usr/bin/node /home/$USER/chicky/server.js
 }
 
+update() {
+    # Navigate to the project directory
+    cd /home/$USER/chicky || { echo "Directory not found"; exit 1; }
+
+    # Fetch the latest changes
+    git fetch origin $BRANCH
+
+    # Check for upstream changes
+    LOCAL=$(git rev-parse @)
+    REMOTE=$(git rev-parse @{u})
+
+    if [ $LOCAL != $REMOTE ]; then
+        if [ -z "$INVOCATION_ID" ]; then
+            read -p "There are upstream changes. Do you want to pull the latest changes? (y/n): " answer
+            if [ "$answer" != "${answer#[Yy]}" ]; then
+                git pull origin $BRANCH
+            else
+                echo "Skipping update."
+            fi
+        else
+            echo "Skipping update when invoked by systemd."
+        fi
+    else
+        echo "No upstream changes."
+    fi
+}
 
 # Check if node is installed
 if ! command -v node &> /dev/null
