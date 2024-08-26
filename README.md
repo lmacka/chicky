@@ -30,7 +30,7 @@ Ensure you have the following installed on your Raspberry Pi Zero:
     ```
     For Raspberry Pi 5
     ```bash
-    sudo apt install python3-lgpio
+    sudo apt install python3-lgpio python3-automationhat
     ```
     Or anything below:
     ```bash

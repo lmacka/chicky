@@ -1,148 +1,160 @@
 const express = require('express');
 const { spawnSync } = require('child_process');
-const { Client } = require('ssh2');
-const net = require('net');
-const fs = require('fs');
-const path = require('path');
 const config = require('./config');
+const WebSocket = require('ws');
 
 const app = express();
 const port = config.port;
-const remoteHost = config.remoteHost;
-const remotePort = config.remotePort;
-const sshUsername = config.sshUsername;
-const privateKeyPath = config.privateKeyPath;
-const debug = config.debug;
-const servo1 = config.servo1;
-const servo2 = config.servo2;
+const remote_ws = config.remote_ws;
 
 app.use(express.json());
 
-function executeScript(args) {
-    const result = spawnSync('python3', ['chicky.py', ...args]);
+let ws;
+let isAlive = true;
+
+function toggleLightHandler(req, res) {
+    const { state } = req.body;
+    if (state !== 'on' && state !== 'off') {
+        return res.status(400).send('Invalid state. Use "on" or "off".');
+    }
+
+    console.log('Received request to /toggle-light with state:', state);
+
+    // Run the Python script using the state
+    const result = spawnSync('poetry', ['run', 'python3', 'light.py', state]);
 
     if (result.error) {
-        console.error(`spawnSync error: ${result.error}`);
-        return { success: false, message: 'Error executing script' };
+        console.error('Error executing Python script:', result.error);
+        return res.status(500).send('Failed to toggle light');
     }
 
-    if (result.stderr.toString()) {
-        console.error(`stderr: ${result.stderr.toString()}`);
-        return { success: false, message: 'Error executing script' };
-    }
-
-    return { success: true };
+    console.log('Python script output:', result.stdout.toString());
+    res.send(`Light toggled ${state}`);
 }
 
-app.post('/up', (req, res) => {
+function feedHandler(req, res) {
     const { servo } = req.body;
-    const servoValue = servo === 'servo1' ? servo1 : servo2;
-    console.log('Received request to /up with servo:', servo);
-    const result = executeScript([servoValue.toString(), '180']);
+    let servoValue;
 
-    if (!result.success) {
-        return res.status(500).send(result.message);
+    if (servo === 'servo1') {
+        servoValue = config.servo1;
+    } else if (servo === 'servo2') {
+        servoValue = config.servo2;
+    } else {
+        return res.status(400).send('Invalid servo. Use "servo1" or "servo2".');
     }
 
-    res.send('Servo up');
-});
+    console.log(`Received request to move ${servo}`);
 
-app.post('/down', (req, res) => {
-    const { servo } = req.body;
-    const servoValue = servo === 'servo1' ? servo1 : servo2;
-    console.log('Received request to /down with servo:', servo);
-    const result = executeScript([servoValue.toString(), '0']);
+    // Run the Python script to move the servo to 180 degrees
+    const result = spawnSync('poetry', ['run', 'python3', 'servocontrol.py', servoValue, '180']);
 
-    if (!result.success) {
-        return res.status(500).send(result.message);
+    if (result.error) {
+        console.error('Error executing Python script:', result.error);
+        return res.status(500).send(`Failed to move ${servo} to 180 degrees`);
     }
 
-    res.send('Servo down');
-});
+    console.log('Python script output:', result.stdout.toString());
 
-app.post('/cycle', (req, res) => {
-    const { servo } = req.body;
-    const servoValue = servo === 'servo1' ? servo1 : servo2;
-    console.log('Received request to /cycle with servo:', servo);
-
-    let result = executeScript([servoValue.toString(), '0']);
-    if (!result.success) {
-        return res.status(500).send(result.message);
-    }
-
+    // Wait for 0.5 seconds and then move the servo to 1 degree
     setTimeout(() => {
-        result = executeScript([servoValue.toString(), '180']);
-        if (!result.success) {
-            return res.status(500).send(result.message);
+        const result2 = spawnSync('poetry', ['run', 'python3', 'servocontrol.py', servoValue, '1']);
+
+        if (result2.error) {
+            console.error('Error executing Python script:', result2.error);
+            return res.status(500).send(`Failed to move ${servo} to 1 degree`);
         }
 
-        res.send('Servo cycled');
-    }, 3000);
-});
-
-const conn = new Client();
-
-function connectSSH() {
-    if (debug) console.log('Attempting to connect via SSH...');
-    conn.on('ready', () => {
-        if (debug) console.log('Client :: ready');
-        conn.forwardIn('0.0.0.0', remotePort, (err) => {
-            if (err) {
-                console.error('Error setting up reverse tunnel:', err);
-                return;
-            }
-            console.log(`Reverse tunnel set up from ${remoteHost}:${remotePort} to localhost:${port}`);
-        });
-
-        conn.on('tcp connection', (info, accept, reject) => {
-            if (debug) console.log(`TCP connection from ${info.srcIP}:${info.srcPort}`);
-            const stream = accept();
-            const localSocket = new net.Socket();
-
-            localSocket.connect(port, '127.0.0.1', () => {
-                if (debug) console.log(`Connected to localhost:${port}`);
-            });
-
-            stream.on('data', (data) => {
-                if (debug) console.log('TCP :: DATA: ' + data);
-                localSocket.write(data);
-            });
-
-            localSocket.on('data', (data) => {
-                if (debug) console.log('Local :: DATA: ' + data);
-                stream.write(data);
-            });
-
-            stream.on('close', () => {
-                if (debug) console.log('TCP :: CLOSED');
-                localSocket.end();
-            });
-
-            localSocket.on('close', () => {
-                if (debug) console.log('Local :: CLOSED');
-                stream.end();
-            });
-        });
-    }).on('error', (err) => {
-        console.error('SSH connection error:', err);
-        setTimeout(connectSSH, 5000); // Retry connection after 5 seconds
-    }).on('end', () => {
-        if (debug) console.log('SSH connection ended');
-        setTimeout(connectSSH, 5000); // Retry connection after 5 seconds
-    }).on('close', (hadError) => {
-        if (debug) console.log('SSH connection closed', hadError ? 'due to error' : '');
-        setTimeout(connectSSH, 5000); // Retry connection after 5 seconds
-    }).connect({
-        host: remoteHost,
-        port: 22,
-        username: sshUsername,
-        privateKey: fs.readFileSync(privateKeyPath)
-    });
-    if (debug) console.log('SSH connection initiated');
+        console.log('Python script output:', result2.stdout.toString());
+        res.send(`${servo} moved to 180 degrees and then to 1 degree`);
+    }, 500);
 }
 
-connectSSH();
+function connectWebSocket() {
+    ws = new WebSocket(remote_ws);
 
-app.listen(port, '0.0.0.0', () => {
-    console.log(`Chicky app listening locally at http://0.0.0.0:${port}`);
-});
+    // Handle WebSocket connection open event
+    ws.on('open', () => {
+        console.log('Connected to remote WebSocket server');
+        // Send identification message
+        ws.send(JSON.stringify({ type: 'identify', name: 'chicky' }));
+
+        // Start heartbeat
+        setInterval(() => {
+            if (isAlive === false) {
+                console.log('Terminating connection due to no pong response');
+                return ws.terminate();
+            }
+
+            isAlive = false;
+            ws.ping();
+        }, 30000); // Ping every 30 seconds
+    });
+
+    // Handle WebSocket pong response
+    ws.on('pong', () => {
+        isAlive = true;
+    });
+
+    // Handle WebSocket messages
+    ws.on('message', (message) => {
+        // Convert Buffer to string
+        const decodedMessage = message.toString('utf8');
+        console.log('Received message from remote server:', decodedMessage);
+
+        // Handle the incoming message
+        handleWebSocketMessage(decodedMessage);
+    });
+
+    // Handle WebSocket errors
+    ws.on('error', (error) => {
+        console.error('WebSocket error:', error);
+    });
+
+    // Handle WebSocket close event
+    ws.on('close', () => {
+        console.log('WebSocket connection closed. Attempting to reconnect...');
+        setTimeout(connectWebSocket, 5000); // Attempt to reconnect after 5 seconds
+    });
+}
+
+// Function to handle incoming WebSocket messages
+function handleWebSocketMessage(message) {
+    try {
+        const parsedMessage = JSON.parse(message);
+        if (parsedMessage.source === 'server') {
+            // Ignore messages sent by the server itself
+            return;
+        }
+        if (parsedMessage.command === 'toggle-light') {
+            // Simulate a request to the /toggle-light endpoint
+            const req = { body: { state: parsedMessage.state || 'on' } }; // Default to 'on' if state is not provided
+            const res = {
+                status: (code) => ({
+                    send: (msg) => console.log(`Response: ${code} - ${msg}`)
+                }),
+                send: (msg) => console.log(`Response: ${msg}`)
+            };
+            toggleLightHandler(req, res);
+        } else if (parsedMessage.command === 'feed') {
+            // Simulate a request to the /feed endpoint
+            const req = { body: { servo: parsedMessage.servo } };
+            const res = {
+                status: (code) => ({
+                    send: (msg) => console.log(`Response: ${code} - ${msg}`)
+                }),
+                send: (msg) => console.log(`Response: ${msg}`)
+            };
+            feedHandler(req, res);
+        }
+    } catch (error) {
+        console.error('Failed to parse message as JSON:', error);
+    }
+}
+
+// Initial connection
+connectWebSocket();
+
+// app.listen(port, '127.0.0.1', () => {
+//     console.log(`Chicky app listening locally at http://127.0.0.1:${port}`);
+// });
